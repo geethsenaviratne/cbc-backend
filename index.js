@@ -4,7 +4,6 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import cors from 'cors';
-
 dotenv.config();
 
 import productRouter from './routes/productRouter.js';
