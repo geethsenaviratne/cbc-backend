@@ -56,7 +56,16 @@ export function loginUser (req, res) {
                  }, process.env.SECRET_KEY)
                 
                  //send token as response to user
-                res.json({ message: 'Login successful', token: token });
+                res.json({ message: 'Login successful', 
+                    token: token,
+                    user: {
+                        email: user.email,
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        type: user.type,
+                        profilePicture: user.profilePicture
+                    }
+                });
             } 
             
             else {
