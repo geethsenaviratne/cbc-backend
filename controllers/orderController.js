@@ -92,12 +92,10 @@ export async function createOrder (req, res) {
 
 export async function getOrders (req, res) {
 
-    
-        
-    
+
 
     try {
-        if(!isCustomer(req)) {
+        if(isCustomer(req)) {
         
         const orderList = await Order.find({ email: req.user.email });  
         res.json(orderList); 
@@ -141,8 +139,8 @@ export async function getQuote (req, res) {
             return;
         }
 
-        labeledTotal += product.price * newOrderData.orderdItems[i].qty
-        total += product.lastPrice * newOrderData.orderdItems[i].qty
+        labeledTotal += product.lastPrice * newOrderData.orderdItems[i].qty
+        total += product.price * newOrderData.orderdItems[i].qty
 
         newProductArray[i] = {
         
@@ -173,3 +171,35 @@ export async function getQuote (req, res) {
             message: error.message });
     }
    }
+
+   export async function updateOrderStatus (req, res) {
+
+    //!isAdmin - check if the logged-in user is an admin (check not an admin)
+    if (!isAdmin(req)) {
+        res.json({ message: 'Access denied. Please login as administrator to update order status.' });
+        return;
+    }
+    try {
+        const orderId = req.params.orderId;
+
+        const order = await Order.findOne({ 
+            orderId : orderId
+        });
+        if(order == null) {
+            res.status(404).json({ message: `Order with ID ${orderId} not found` })
+            return;
+        }
+        const notes = req.body.notes;
+        const status = req.body.status;
+
+        await Order.findOneAndUpdate(
+            {orderId : orderId},
+            {notes : notes, status : status}
+        );
+        res.json ({
+            message: "Order status updated successfully"
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
