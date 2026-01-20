@@ -4,6 +4,20 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import axios from 'axios';
 dotenv.config();
+import nodemailer from 'nodemailer';
+import OTP from '../models/otpModel.js';
+import getDesignedEmail from '../lib/emailTemplates.js';
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+        user: process.env.EMAIL,
+        pass: process.env.APP_PASSWORD
+    }
+});
 
 export function createUser (req, res){
 
@@ -42,6 +56,10 @@ export function loginUser (req, res) {
         }
         else {
             const user = userList[0];
+            if (user.isBlocked) {
+    res.json({ message: 'Your account is blocked. Please contact support.' });
+    return;
+}
             const isPasswordValid = bcrypt.compareSync(req.body.password, user.password);
             
             if (isPasswordValid) {
@@ -118,8 +136,13 @@ export function isCustomer (req) {
             const email = response.data.email
             //check if user with this email already exists
             const usersList= await User.find({ email: email })
+            
 
             if(usersList.length > 0) {
+                if (userList.isBlocked) {
+    res.json({ message: 'Your account is blocked. Please contact support.' });
+    return;
+}
                 const userList= usersList[0]
                 const token = jwt.sign({
                     email: userList.email,
@@ -143,6 +166,7 @@ export function isCustomer (req) {
             }
 
             else {
+               
                const newUserData = {
         email: email,
         firstName: response.data.given_name,
@@ -180,3 +204,93 @@ export function isCustomer (req) {
         res.json(req.user);
         
     }
+
+    export async function getAllUsers(req,res) {
+        if(!isAdmin(req)) {
+            res.status(403).json({ message: 'Access denied. Please login as administrator to view all users.' });
+            return;
+        }
+
+        try {
+            const userList = await User.find();
+            res.json(userList);
+        } catch (error) {
+            res.status(500).json({ message: 'Error retrieving users' });
+        }
+    }
+
+    export async function blockUser(req,res) {
+        if(!isAdmin(req)) {
+            res.status(403).json({ message: 'Access denied. Please login as administrator to block a user.' });
+            return;
+        }
+        if(req.user.email === req.params.email) {
+            res.status(400).json({ message: 'You cannot block your own account.' });
+            return;
+        }
+
+        try{
+            await User.updateOne({ email: req.params.email }, { isBlocked: req.body.isBlocked });
+            res.json({ message: 'User blocked successfully.' });
+        }
+        catch(error) {
+            res.status(500).json({ message: 'Error blocking user.' });
+        }
+    }
+
+    export async function sendOTP(req, res) {
+        const email = req.params.email;
+        if(email == null) {
+            res.status(400).json({ message: 'Email is required' });
+            return;
+        }
+        const otpCode = Math.floor(100000 + Math.random() * 900000); //generate 6-digit OTP
+
+        try {
+            //send OTP to user's email
+            await OTP.deleteMany({ email: email }); //delete any existing OTPs for this email
+            const newOTP = new OTP({ email: email, otp: otpCode });
+            await newOTP.save();
+
+            await transporter.sendMail({
+        from: `"MIZO BEAUTY" <${process.env.EMAIL}>`,
+        to: email,
+        subject: "Your One-Time Password (OTP)",
+        html: getDesignedEmail({
+        otp: otpCode,
+        purpose: "Secure Login Verification",
+        validityMinutes: 10
+    })
+});
+
+            res.json({ message: 'OTP sent successfully' });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error sending OTP. Please try again later.' });
+            return;
+        }
+    }        
+
+export async function changePasswordViaOTP(req, res) {
+    const email = req.body.email;
+    const newPassword = req.body.newPassword;
+    const otp = req.body.otp;
+    try {
+    const otpRecord = await OTP.findOne({ email: email, otp: otp });
+
+    if(otpRecord == null) {
+        res.status(400).json({ message: 'Invalid OTP' });
+        return;
+    }
+
+    await OTP.deleteMany({ email: email }); //delete OTPs after successful verification
+
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+
+    
+        await User.updateOne({ email: email }, { password: hashedPassword });
+        res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error changing password' });
+    }
+}
